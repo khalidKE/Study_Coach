@@ -4,9 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Sparkles, UploadCloud, ClipboardList, CheckCircle2, ArrowLeft } from "lucide-react"
+import { Sparkles, CheckCircle2, ArrowLeft, UploadCloud, Plus } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 
@@ -35,21 +34,124 @@ export function ChatBot() {
     const [loading, setLoading] = useState(false)
     const bottomRef = useRef<HTMLDivElement | null>(null)
 
-    // Upload + quiz state
-    const [file, setFile] = useState<File | null>(null)
-    const [uploading, setUploading] = useState(false)
-    const [uploadedInfo, setUploadedInfo] = useState<{ filename: string; filepath: string } | null>(null)
-
     const [topicName, setTopicName] = useState("")
     const [numQuestions, setNumQuestions] = useState<number>(3)
     const [generatingQuiz, setGeneratingQuiz] = useState(false)
     const [quiz, setQuiz] = useState<QuizItem[] | null>(null)
-    const [answers, setAnswers] = useState<Record<number, "a" | "b" | "c" | "d" | "">>({})
+    const [answers, setAnswers] = useState<Partial<Record<number, "a" | "b" | "c" | "d">>>({})
     const [showReport, setShowReport] = useState(false)
+    const [file, setFile] = useState<File | null>(null)
+    const [uploading, setUploading] = useState(false)
+    const [uploadedInfo, setUploadedInfo] = useState<{ filename: string; filepath: string } | null>(null)
+
+    // Conversational quiz flow state
+    const [quizFlow, setQuizFlow] = useState<"idle" | "awaiting_topic" | "awaiting_count">("idle")
+    const [pendingTopic, setPendingTopic] = useState<string>("")
+    const chatFileInputRef = useRef<HTMLInputElement | null>(null)
 
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [messages])
+
+    // Handle conversational quiz flow
+    const handleQuizFlow = async (userText: string): Promise<boolean> => {
+        const text = userText.toLowerCase()
+
+        // Start flow if user expresses intent
+        const wantsQuiz = /\b(quiz|generate quiz|make a quiz|start quiz)\b/.test(text) || quizFlow !== "idle"
+        if (!wantsQuiz) return false
+
+        // Ensure we have the user's message already appended by caller
+        if (quizFlow === "idle") {
+            setQuiz(null)
+            setAnswers({})
+            setShowReport(false)
+            setQuizFlow("awaiting_topic")
+            setMessages((curr) => [
+                ...curr,
+                { role: "assistant", content: "Great! What topic should the quiz cover?" },
+            ])
+            return true
+        }
+
+        if (quizFlow === "awaiting_topic") {
+            const topic = userText.trim()
+            if (!topic) {
+                setMessages((curr) => [
+                    ...curr,
+                    { role: "assistant", content: "Please provide a topic for the quiz." },
+                ])
+                return true
+            }
+            setPendingTopic(topic)
+            setQuizFlow("awaiting_count")
+            setMessages((curr) => [
+                ...curr,
+                { role: "assistant", content: "How many questions would you like? Choose a number from 1 to 10." },
+            ])
+            return true
+        }
+
+        if (quizFlow === "awaiting_count") {
+            const match = userText.match(/\b(\d{1,2})\b/)
+            const n = match ? Number(match[1]) : NaN
+            if (!Number.isFinite(n) || n < 1 || n > 10) {
+                setMessages((curr) => [
+                    ...curr,
+                    { role: "assistant", content: "Please enter a valid number between 1 and 10." },
+                ])
+                return true
+            }
+            setTopicName(pendingTopic)
+            setNumQuestions(n)
+            setQuizFlow("idle")
+            await generateQuizWith(pendingTopic, n)
+            return true
+        }
+
+        return false
+    }
+
+    const generateQuizWith = async (topic: string, count: number) => {
+        if (!topic || count < 1 || count > 10) {
+            setMessages((curr) => [
+                ...curr,
+                { role: "assistant", content: "Please provide a topic name and choose 1 to 10 questions." },
+            ])
+            return
+        }
+        setGeneratingQuiz(true)
+        setShowReport(false)
+        setQuiz(null)
+        setAnswers({})
+        try {
+            const res = await fetch("/api/generate-quiz", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ topicId: 1, topicName: topic, numQuestions: count }),
+            })
+            const data = await res.json()
+            if (!res.ok || data?.error) throw new Error(data?.error || "Quiz generation failed")
+            const items: QuizItem[] = data.quiz
+            setQuiz(items)
+            setMessages((curr) => [
+                ...curr,
+                {
+                    role: "assistant",
+                    content: `I created ${items.length} questions about "${topic}". Please answer below, then submit to see your report.`,
+                },
+            ])
+        } catch (e: any) {
+            setMessages((curr) => [...curr, { role: "assistant", content: `Quiz error: ${e?.message || e}` }])
+        } finally {
+            setGeneratingQuiz(false)
+        }
+    }
+
+    // Keep for potential programmatic triggers, fallback to conversational flow
+    const generateQuiz = async () => {
+        await generateQuizWith(topicName, numQuestions)
+    }
 
     const send = async () => {
         const trimmed = input.trim()
@@ -61,6 +163,10 @@ export function ChatBot() {
         setLoading(true)
 
         try {
+            // Conversational quiz flow handling
+            const consumed = await handleQuizFlow(trimmed)
+            if (consumed) return
+
             const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -88,66 +194,6 @@ export function ChatBot() {
         }
     }
 
-    const handleUpload = async () => {
-        if (!file) return
-        setUploading(true)
-        try {
-            const form = new FormData()
-            form.append("file", file)
-            const res = await fetch("/api/upload-pdf", { method: "POST", body: form })
-            const data = await res.json()
-            if (!res.ok || data?.error) throw new Error(data?.error || "Upload failed")
-            setUploadedInfo({ filename: data.filename, filepath: data.filepath })
-            setMessages((curr) => [
-                ...curr,
-                {
-                    role: "assistant",
-                    content: `Uploaded ${data.originalName}. Now set a topic and number of questions, then click Generate Quiz.`,
-                },
-            ])
-        } catch (e: any) {
-            setMessages((curr) => [...curr, { role: "assistant", content: `Upload error: ${e?.message || e}` }])
-        } finally {
-            setUploading(false)
-        }
-    }
-
-    const generateQuiz = async () => {
-        if (!topicName || numQuestions < 1 || numQuestions > 10) {
-            setMessages((curr) => [
-                ...curr,
-                { role: "assistant", content: "Please provide a topic name and choose 1 to 10 questions." },
-            ])
-            return
-        }
-        setGeneratingQuiz(true)
-        setShowReport(false)
-        setQuiz(null)
-        setAnswers({})
-        try {
-            const res = await fetch("/api/generate-quiz", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ topicId: 1, topicName, numQuestions }),
-            })
-            const data = await res.json()
-            if (!res.ok || data?.error) throw new Error(data?.error || "Quiz generation failed")
-            const items: QuizItem[] = data.quiz
-            setQuiz(items)
-            setMessages((curr) => [
-                ...curr,
-                {
-                    role: "assistant",
-                    content: `I created ${items.length} questions about "${topicName}". Please answer below, then submit to see your report.`,
-                },
-            ])
-        } catch (e: any) {
-            setMessages((curr) => [...curr, { role: "assistant", content: `Quiz error: ${e?.message || e}` }])
-        } finally {
-            setGeneratingQuiz(false)
-        }
-    }
-
     const submitAnswers = () => {
         if (!quiz) return
         const unanswered = quiz.findIndex((_, idx) => !answers[idx])
@@ -161,6 +207,50 @@ export function ChatBot() {
         setShowReport(true)
     }
 
+    const handleUpload = async (selectedFile?: File) => {
+        const f = selectedFile ?? file
+        if (!f) return
+        setUploading(true)
+        try {
+            const form = new FormData()
+            form.append("file", f)
+            const res = await fetch("/api/upload-pdf", { method: "POST", body: form })
+            const data = await res.json()
+            if (!res.ok || data?.error) throw new Error(data?.error || "Upload failed")
+            setUploadedInfo({ filename: data.filename, filepath: data.filepath })
+            setMessages((curr) => [
+                ...curr,
+                { role: "assistant", content: `Uploaded ${data.originalName}. You can now continue chatting or say 'start quiz' to generate questions.` },
+            ])
+        } catch (e: any) {
+            setMessages((curr) => [...curr, { role: "assistant", content: `Upload error: ${e?.message || e}` }])
+        } finally {
+            setUploading(false)
+        }
+    }
+
+    function formatQuestion(idx: number, q: QuizItem) {
+        return `${idx + 1}. ${q.question}\nA. ${q.options.a}\nB. ${q.options.b}\nC. ${q.options.c}\nD. ${q.options.d}\nReply with a, b, c, or d.`
+    }
+
+    function buildReport(items: QuizItem[], ans: Partial<Record<number, 'a' | 'b' | 'c' | 'd'>>) {
+        let correctCount = 0
+        const lines: string[] = ["Quiz Report"]
+        items.forEach((q, idx) => {
+            const user = ans[idx]!
+            const isCorrect = user === q.correct
+            if (isCorrect) correctCount++
+            lines.push(`${idx + 1}. ${q.question}`)
+            lines.push(`Your answer: ${user.toUpperCase()} — ${q.options[user]}`)
+            lines.push(`Correct answer: ${q.correct.toUpperCase()} — ${q.options[q.correct]}`)
+            lines.push(`Result: ${isCorrect ? "Correct" : "Incorrect"}`)
+            lines.push(`Explanation: ${q.explanation}`)
+            lines.push("")
+        })
+        lines.push(`Score: ${correctCount}/${items.length}`)
+        return lines.join("\n")
+    }
+
     return (
         <div className="grid grid-rows-[auto,auto,1fr,auto] gap-4 h-[80vh]">
             <div className="flex items-center justify-between">
@@ -172,32 +262,7 @@ export function ChatBot() {
                 </div>
             </div>
 
-            {/* Upload + Quiz setup */}
-            <Card className="p-4 border-border/60">
-                <div className="grid md:grid-cols-3 gap-4 items-end">
-                    <div className="space-y-2">
-                        <Label className="text-sm">Optional: Upload PDF</Label>
-                        <Input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                        <Button onClick={handleUpload} disabled={!file || uploading} variant="secondary" className="w-full">
-                            <UploadCloud className="w-4 h-4 mr-2" /> {uploading ? "Uploading..." : uploadedInfo ? "Re-upload" : "Upload"}
-                        </Button>
-                        {uploadedInfo && <div className="text-xs text-muted-foreground">Uploaded: {uploadedInfo.filename}</div>}
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label className="text-sm">Topic</Label>
-                        <Input value={topicName} onChange={(e) => setTopicName(e.target.value)} placeholder="e.g., Neural Networks" />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label className="text-sm">Number of Questions (1-10)</Label>
-                        <Input type="number" min={1} max={10} value={numQuestions} onChange={(e) => setNumQuestions(Number(e.target.value))} />
-                        <Button onClick={generateQuiz} disabled={generatingQuiz} className="w-full">
-                            <ClipboardList className="w-4 h-4 mr-2" /> {generatingQuiz ? "Generating..." : "Generate Quiz"}
-                        </Button>
-                    </div>
-                </div>
-            </Card>
+            {/* Conversational flow replaces the manual setup UI */}
 
             <Card className="p-4 overflow-y-auto space-y-4 border-border/60">
                 {messages.map((m, i) => (
@@ -217,8 +282,8 @@ export function ChatBot() {
                 <div ref={bottomRef} />
             </Card>
 
-            {/* Quiz area without answers, collect responses */}
-            {quiz && !showReport && (
+            {/* Quiz UI hidden in chat-driven mode */}
+            {quiz && !showReport && false && (
                 <Card className="p-4 border-border/60 space-y-6">
                     {quiz.map((q, idx) => (
                         <div key={idx} className="space-y-2">
@@ -245,8 +310,8 @@ export function ChatBot() {
                 </Card>
             )}
 
-            {/* Report with correct answers and explanations */}
-            {quiz && showReport && (
+            {/* Report UI hidden in chat-driven mode */}
+            {quiz && showReport && false && (
                 <Card className="p-4 border-border/60 space-y-4">
                     <div className="flex items-center gap-2 text-green-600">
                         <CheckCircle2 className="w-5 h-5" /> Quiz Report
@@ -277,6 +342,30 @@ export function ChatBot() {
             )}
 
             <div className="flex gap-2 items-end">
+                {/* Chat bar upload (+) icon */}
+                <input
+                    ref={chatFileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) {
+                            void handleUpload(f)
+                        }
+                        // reset value so same file can be reselected
+                        e.currentTarget.value = ""
+                    }}
+                />
+                <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => chatFileInputRef.current?.click()}
+                    disabled={uploading}
+                    title="Upload PDF"
+                >
+                    <Plus className="w-4 h-4" />
+                </Button>
                 <Textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
