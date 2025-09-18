@@ -3,14 +3,15 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Brain, Upload, Target, Sparkles } from "lucide-react"
+import { BookOpen, Brain, Upload, Target, Sparkles, MessageSquare } from "lucide-react"
 import { Dashboard } from "@/components/dashboard"
 import { PDFUploadComponent } from "@/components/pdf-upload"
 import { TopicManager } from "@/components/topic-manager"
 import { QuizInterface } from "@/components/quiz-interface"
+import { ChatBot } from "@/components/chat-bot"
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "upload" | "topics" | "quiz">("dashboard")
+  const [activeTab, setActiveTab] = useState<"dashboard" | "upload" | "topics" | "quiz" | "chat">("dashboard")
   const [resources, setResources] = useState<any[]>([])
 
   // Load resources on component mount
@@ -100,6 +101,15 @@ export default function HomePage() {
               <Brain className="w-4 h-4 mr-2" />
               Generate Quiz
             </Button>
+            <Button
+              variant={activeTab === "chat" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("chat")}
+              className={activeTab === "chat" ? "bg-primary text-primary-foreground" : ""}
+            >
+              <MessageSquare className="w-4 h-4 mr-2" />
+              Chat
+            </Button>
           </div>
         </div>
       </div>
@@ -110,12 +120,13 @@ export default function HomePage() {
         {activeTab === "upload" && <PDFUploadComponent onResourcesUpdate={handleResourcesUpdate} />}
         {activeTab === "topics" && <TopicManager resources={resources} />}
         {activeTab === "quiz" && <QuizInterface resources={resources} />}
+        {activeTab === "chat" && <ChatBot />}
       </main>
 
       {/* Footer */}
       <footer className="border-t border-border/50 py-8 px-6 mt-20">
         <div className="container mx-auto text-center">
-          <p className="text-muted-foreground">Built with AI SDK and powered by GROQ • StudyCoach AI © 2024</p>
+          <p className="text-muted-foreground"> StudyCoach AI </p>
         </div>
       </footer>
     </div>
