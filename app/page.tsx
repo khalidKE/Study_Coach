@@ -3,15 +3,18 @@
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { BookOpen, Brain, Upload, Target, Sparkles, MessageSquare } from "lucide-react"
+import { BookOpen, Brain, Upload, Target, Sparkles, MessageSquare, CalendarCheck } from "lucide-react"
 import { Dashboard } from "@/components/dashboard"
 import { PDFUploadComponent } from "@/components/pdf-upload"
 import { TopicManager } from "@/components/topic-manager"
 import { QuizInterface } from "@/components/quiz-interface"
 import { ChatBot } from "@/components/chat-bot"
+import { StudyPlan } from "@/components/study-plan"
 
 export default function HomePage() {
-  const [activeTab, setActiveTab] = useState<"dashboard" | "upload" | "topics" | "quiz" | "chat">("dashboard")
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "upload" | "topics" | "quiz" | "chat" | "plan"
+  >("dashboard")
   const [resources, setResources] = useState<any[]>([])
 
   // Load resources on component mount
@@ -110,17 +113,27 @@ export default function HomePage() {
               <MessageSquare className="w-4 h-4 mr-2" />
               Chat
             </Button>
+            <Button
+              variant={activeTab === "plan" ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveTab("plan")}
+              className={activeTab === "plan" ? "bg-primary text-primary-foreground" : ""}
+            >
+              <CalendarCheck className="w-4 h-4 mr-2" />
+              Plan
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Main Content */}
       <main className="container mx-auto px-6 py-8">
-        {activeTab === "dashboard" && <Dashboard resources={resources} onNavigate={setActiveTab} />}
+        {activeTab === "dashboard" && <Dashboard resources={resources} onNavigate={setActiveTab as any} />}
         {activeTab === "upload" && <PDFUploadComponent onResourcesUpdate={handleResourcesUpdate} />}
         {activeTab === "topics" && <TopicManager resources={resources} />}
         {activeTab === "quiz" && <QuizInterface resources={resources} />}
         {activeTab === "chat" && <ChatBot />}
+        {activeTab === "plan" && <StudyPlan />}
       </main>
 
       {/* Footer */}

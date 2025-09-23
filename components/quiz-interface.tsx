@@ -19,6 +19,7 @@ import {
   Sparkles,
   RotateCcw,
   ChevronRight,
+  Lightbulb,
 } from "lucide-react"
 
 interface QuizInterfaceProps {
@@ -63,6 +64,8 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
   const [showResults, setShowResults] = useState(false)
   const [quizResults, setQuizResults] = useState<QuizResult[]>([])
   const [quizMode, setQuizMode] = useState<"setup" | "taking" | "results">("setup")
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisText, setAnalysisText] = useState("")
 
   useEffect(() => {
     if (selectedResource) {
@@ -173,11 +176,37 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
     setCurrentQuestionIndex(0)
     setQuizResults([])
     setQuizMode("setup")
+    setAnalysisText("")
   }
 
   const calculateScore = () => {
     const correct = quizResults.filter((r) => r.isCorrect).length
     return Math.round((correct / quiz.length) * 100)
+  }
+
+  const analyzeWithAI = async () => {
+    if (!quiz.length || !quizResults.length) return
+    setAnalysisLoading(true)
+    setAnalysisText("")
+    try {
+      const answers: Record<number, "a" | "b" | "c" | "d"> = {}
+      quizResults.forEach((r) => {
+        const ans = selectedAnswers[r.questionIndex]
+        if (ans) answers[r.questionIndex] = ans as any
+      })
+      const res = await fetch("/api/analyze-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quiz, answers }),
+      })
+      const data = await res.json()
+      if (!res.ok || data?.error) throw new Error(data?.error || "Analysis failed")
+      setAnalysisText(data.analysis as string)
+    } catch (e: any) {
+      setAnalysisText(`Error: ${e?.message || e}`)
+    } finally {
+      setAnalysisLoading(false)
+    }
   }
 
   const selectedResourceData = resources.find((r) => r.id === selectedResource)
@@ -338,8 +367,8 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">Your answer:</span>
                           <Badge variant={isCorrect ? "default" : "destructive"}>
-                            {result.selectedAnswer?.toUpperCase()}){" "}
-                            {question.options[result.selectedAnswer as keyof typeof question.options]}
+                            {selectedAnswers[index]?.toUpperCase()}){" "}
+                            {question.options[selectedAnswers[index] as keyof typeof question.options]}
                           </Badge>
                         </div>
                         {!isCorrect && (
@@ -371,11 +400,29 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
             <RotateCcw className="w-4 h-4 mr-2" />
             Take Another Quiz
           </Button>
-          <Button className="glow-effect">
-            <Brain className="w-4 h-4 mr-2" />
-            Study This Topic More
+          <Button onClick={analyzeWithAI} disabled={analysisLoading} className="glow-effect">
+            {analysisLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Analyzing...
+              </>
+            ) : (
+              <>
+                <Lightbulb className="w-4 h-4 mr-2" /> AI Analysis
+              </>
+            )}
           </Button>
         </div>
+
+        {analysisText && (
+          <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle>AI Insights & Suggestions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <pre className="whitespace-pre-wrap text-sm leading-relaxed">{analysisText}</pre>
+            </CardContent>
+          </Card>
+        )}
       </div>
     )
   }

@@ -112,6 +112,48 @@ export function ChatBot() {
         return false
     }
 
+    // Detect and handle progress analysis intent
+    const maybeAnalyzeProgress = async (userText: string): Promise<boolean> => {
+        const text = userText.toLowerCase()
+        const wantsAnalysis = /(analy[sz]e).*(progress|performance|study)|study\s+plan/.test(text) || text.includes("analyze my progress")
+        if (!wantsAnalysis) return false
+
+        try {
+            // Build a minimal recentQuizzes summary from current state if available
+            let recentQuizzes: Array<{ topic: string; scorePercent: number; date?: string; weakAreas?: string[] }> = []
+            if (quiz && Object.keys(answers).length > 0) {
+                const total = quiz.length
+                let correct = 0
+                const weakAreas: string[] = []
+                quiz.forEach((q, idx) => {
+                    const a = answers[idx]
+                    if (a === q.correct) correct++
+                    else weakAreas.push(q.topic_name)
+                })
+                const score = Math.round((correct / total) * 100)
+                recentQuizzes.push({ topic: topicName || quiz[0]?.topic_name || "Recent Quiz", scorePercent: score, weakAreas })
+            }
+
+            const res = await fetch("/api/analyze-progress", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    recentQuizzes,
+                    activity: { studyDaysThisWeek: 5, totalTopics: 12, totalQuizzes: 4 },
+                }),
+            })
+            const data = await res.json()
+            if (!res.ok || data?.error) throw new Error(data?.error || "Progress analysis failed")
+            setMessages((curr) => [...curr, { role: "assistant", content: data.analysis as string }])
+        } catch (e: any) {
+            setMessages((curr) => [
+                ...curr,
+                { role: "assistant", content: `Progress analysis error: ${e?.message || e}` },
+            ])
+        }
+        return true
+    }
+
     const generateQuizWith = async (topic: string, count: number) => {
         if (!topic || count < 1 || count > 10) {
             setMessages((curr) => [
@@ -138,7 +180,7 @@ export function ChatBot() {
                 ...curr,
                 {
                     role: "assistant",
-                    content: `I created ${items.length} questions about "${topic}". Please answer below, then submit to see your report.`,
+                    content: `I created ${items.length} questions about "${topic}". Answer with a/b/c/d for each. When you're done, say "show report" or "analyze my progress".`,
                 },
             ])
         } catch (e: any) {
@@ -166,6 +208,17 @@ export function ChatBot() {
             // Conversational quiz flow handling
             const consumed = await handleQuizFlow(trimmed)
             if (consumed) return
+
+            // Show report shortcut
+            if (/\b(show report|report)\b/i.test(trimmed) && quiz) {
+                setShowReport(true)
+                setLoading(false)
+                return
+            }
+
+            // Progress analysis intent
+            const analyzed = await maybeAnalyzeProgress(trimmed)
+            if (analyzed) return
 
             const res = await fetch("/api/chat", {
                 method: "POST",
@@ -370,7 +423,7 @@ export function ChatBot() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder="Type your question... (Shift+Enter for newline)"
+                    placeholder="Type your question... (Try: 'start quiz' or 'analyze my progress')"
                     className="min-h-[56px]"
                 />
                 <Button onClick={() => void send()} disabled={loading}>

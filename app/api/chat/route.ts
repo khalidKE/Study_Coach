@@ -4,6 +4,13 @@ import { groq } from "@ai-sdk/groq"
 
 export async function POST(request: NextRequest) {
     try {
+        if (!process.env.GROQ_API_KEY) {
+            return NextResponse.json(
+                { success: false, error: "Server missing GROQ_API_KEY. Please set it in .env.local and restart the dev server." },
+                { status: 500 },
+            )
+        }
+
         const body = await request.json().catch(() => ({}))
         const prompt: string | undefined = body?.prompt
         const messages: Array<{ role: "user" | "assistant" | "system"; content: string }> | undefined = body?.messages
