@@ -1,6 +1,27 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { groq } from "@ai-sdk/groq"
+import path from "path"
+import { promises as fs } from "fs"
+import { mkdir } from "fs/promises"
+import { existsSync } from "fs"
+
+async function readDb() {
+  const dbPath = path.join(process.cwd(), "data", "db.json")
+  try {
+    const raw = await fs.readFile(dbPath, "utf8")
+    return JSON.parse(raw || "{}")
+  } catch {
+    return {}
+  }
+}
+
+async function writeDb(data: any) {
+  const dir = path.join(process.cwd(), "data")
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true })
+  const dbPath = path.join(dir, "db.json")
+  await fs.writeFile(dbPath, JSON.stringify(data, null, 2), "utf8")
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,15 +101,28 @@ export async function POST(request: NextRequest) {
       ]
     }
 
-    // Mock saving to database
+    // Persist to JSON DB
+    const db = await readDb()
+    const existing: any[] = Array.isArray(db.topics) ? db.topics : []
+    const startId = (existing.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) || 0) + 1
     const topicsWithIds = topics.map((topic: any, index: number) => ({
-      id: index + 1,
-      ...topic,
+      id: startId + index,
+      name: topic.topic_name,
+      content: topic.content,
+      resource_id: Number(resourceId),
     }))
+    db.topics = [...topicsWithIds, ...existing]
+    // update resource topics_count
+    if (Array.isArray(db.resources)) {
+      db.resources = db.resources.map((r: any) =>
+        Number(r.id) === Number(resourceId) ? { ...r, topics_count: (r.topics_count || 0) + topicsWithIds.length } : r,
+      )
+    }
+    await writeDb(db)
 
     return NextResponse.json({
       success: true,
-      topics: topicsWithIds,
+      topics: topicsWithIds.map(({ content, ...t }) => t),
       message: `Successfully extracted ${topics.length} topics from resource ${resourceId}`,
     })
   } catch (error) {

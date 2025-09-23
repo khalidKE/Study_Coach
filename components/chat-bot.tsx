@@ -49,6 +49,49 @@ export function ChatBot() {
     const [pendingTopic, setPendingTopic] = useState<string>("")
     const chatFileInputRef = useRef<HTMLInputElement | null>(null)
 
+    // Persisted chat session
+    const [sessionId, setSessionId] = useState<string>("")
+
+    useEffect(() => {
+        // establish session id from localStorage
+        let sid = localStorage.getItem("chatSessionId")
+        if (!sid) {
+            sid = Math.random().toString(36).slice(2) + Date.now().toString(36)
+            localStorage.setItem("chatSessionId", sid)
+        }
+        setSessionId(sid)
+    }, [])
+
+    // Load persisted chat on session established
+    useEffect(() => {
+        if (!sessionId) return
+        const load = async () => {
+            try {
+                const res = await fetch(`/api/chats?sessionId=${encodeURIComponent(sessionId)}`)
+                const data = await res.json()
+                if (res.ok && data?.success && Array.isArray(data.messages) && data.messages.length > 0) {
+                    setMessages(data.messages as ChatMessage[])
+                }
+            } catch {
+                // ignore
+            }
+        }
+        void load()
+    }, [sessionId])
+
+    // Save chat whenever messages change (debounced)
+    useEffect(() => {
+        if (!sessionId) return
+        const handle = setTimeout(() => {
+            void fetch("/api/chats", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sessionId, messages }),
+            })
+        }, 500)
+        return () => clearTimeout(handle)
+    }, [messages, sessionId])
+
     useEffect(() => {
         bottomRef.current?.scrollIntoView({ behavior: "smooth" })
     }, [messages])
@@ -176,6 +219,14 @@ export function ChatBot() {
             if (!res.ok || data?.error) throw new Error(data?.error || "Quiz generation failed")
             const items: QuizItem[] = data.quiz
             setQuiz(items)
+            // Save generated quiz so it appears in Get Quiz
+            try {
+                await fetch("/api/quizzes", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ resource_id: null, topic_id: null, topic_name: topic, items }),
+                })
+            } catch { }
             setMessages((curr) => [
                 ...curr,
                 {
@@ -258,6 +309,18 @@ export function ChatBot() {
             return
         }
         setShowReport(true)
+        // Save answers for progress tracking
+        try {
+            const total = quiz.length
+            let correct = 0
+            quiz.forEach((q, idx) => { if (answers[idx] === q.correct) correct++ })
+            const score_percent = Math.round((correct / total) * 100)
+            void fetch("/api/quiz-answers", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ quiz_id: null, topic_name: topicName || quiz[0]?.topic_name, items: quiz, answers, score_percent }),
+            })
+        } catch { }
     }
 
     const handleUpload = async (selectedFile?: File) => {

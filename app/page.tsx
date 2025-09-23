@@ -102,7 +102,7 @@ export default function HomePage() {
               className={activeTab === "quiz" ? "bg-primary text-primary-foreground" : ""}
             >
               <Brain className="w-4 h-4 mr-2" />
-              Generate Quiz
+              Get Quiz
             </Button>
             <Button
               variant={activeTab === "chat" ? "default" : "ghost"}
@@ -133,7 +133,7 @@ export default function HomePage() {
         {activeTab === "topics" && <TopicManager resources={resources} />}
         {activeTab === "quiz" && <QuizInterface resources={resources} />}
         {activeTab === "chat" && <ChatBot />}
-        {activeTab === "plan" && <StudyPlan />}
+        {activeTab === "plan" && <StudyPlan resources={resources} />}
       </main>
 
       {/* Footer */}

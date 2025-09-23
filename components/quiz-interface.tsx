@@ -51,6 +51,15 @@ interface QuizResult {
   isCorrect: boolean
 }
 
+interface SavedQuiz {
+  id: number
+  resource_id: number | null
+  topic_id: number | null
+  topic_name: string
+  items: QuizQuestion[]
+  created_at: string
+}
+
 export function QuizInterface({ resources }: QuizInterfaceProps) {
   const [selectedResource, setSelectedResource] = useState<number | null>(null)
   const [topics, setTopics] = useState<Topic[]>([])
@@ -66,12 +75,26 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
   const [quizMode, setQuizMode] = useState<"setup" | "taking" | "results">("setup")
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisText, setAnalysisText] = useState("")
+  const [savedQuizzes, setSavedQuizzes] = useState<SavedQuiz[]>([])
 
   useEffect(() => {
     if (selectedResource) {
       fetchTopics(selectedResource)
     }
   }, [selectedResource])
+
+  useEffect(() => {
+    const loadSaved = async () => {
+      try {
+        const r = await fetch("/api/quizzes")
+        const j = await r.json()
+        if (r.ok && j?.success) setSavedQuizzes(j.quizzes as SavedQuiz[])
+      } catch {
+        setSavedQuizzes([])
+      }
+    }
+    void loadSaved()
+  }, [])
 
   const fetchTopics = async (resourceId: number) => {
     try {
@@ -168,6 +191,23 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
 
     setQuizResults(results)
     setQuizMode("results")
+
+    // Persist answers for progress analytics
+    try {
+      const correct = results.filter((r) => r.isCorrect).length
+      const score_percent = Math.round((correct / (quiz.length || 1)) * 100)
+      void fetch("/api/quiz-answers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          quiz_id: null,
+          topic_name: selectedTopicData?.name ?? quiz[0]?.topic_name ?? "Quiz",
+          items: quiz,
+          answers: selectedAnswers.reduce((acc, a, i) => ({ ...acc, [i]: a }), {} as Record<number, string>),
+          score_percent,
+        }),
+      })
+    } catch { }
   }
 
   const resetQuiz = () => {
@@ -436,6 +476,34 @@ export function QuizInterface({ resources }: QuizInterfaceProps) {
           Create custom quizzes from your study topics to test your knowledge and reinforce learning.
         </p>
       </div>
+
+      {/* Saved quizzes created in Chat */}
+      {savedQuizzes.length > 0 && (
+        <Card className="bg-card/50 border-border/50 backdrop-blur-sm">
+          <CardHeader>
+            <CardTitle>Saved Quizzes</CardTitle>
+            <CardDescription>Quizzes you generated in chat</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3">
+              {savedQuizzes.map((sq) => (
+                <div key={sq.id} className="flex items-center justify-between p-3 rounded-md border border-border/40">
+                  <div className="flex items-center gap-3">
+                    <Badge variant="secondary">{sq.items.length} Qs</Badge>
+                    <div>
+                      <div className="font-medium">{sq.topic_name}</div>
+                      <div className="text-xs text-muted-foreground">{new Date(sq.created_at).toLocaleString()}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => { setQuiz(sq.items); setSelectedAnswers(new Array(sq.items.length).fill("")); setCurrentQuestionIndex(0); setQuizMode("taking") }}>Take</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quiz Setup */}
       <Card className="bg-card/50 border-border/50 backdrop-blur-sm">

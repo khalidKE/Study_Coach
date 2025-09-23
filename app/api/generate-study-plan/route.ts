@@ -11,17 +11,28 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        const { goals, timeframeWeeks, weeklyHours, topics } = await request.json()
+        const { goals, timeframeWeeks, weeklyHours, resourceName, selectedTopicNames, topics } = await request.json()
 
         if (!goals || !timeframeWeeks || !weeklyHours) {
             return NextResponse.json({ error: "Missing goals, timeframeWeeks, or weeklyHours" }, { status: 400 })
         }
 
-        const system = `You are StudyCoach AI. Create a realistic, efficient study plan based on user's goals, timeframe, and available hours per week. Use spaced repetition, interleaving, and active recall. Provide:\n- High-level summary\n- Weekly breakdown with topics and hours\n- Daily or session-level suggestions\n- Checkpoints and self-assessment ideas\n- Tips to stay consistent. Keep output concise and skimmable.`
+        const system = `You are StudyCoach AI. Create a realistic, efficient study plan based on user's goals, timeframe, available hours per week, and (if provided) the user's uploaded study material and chosen topics. Heavily prioritize the provided topics and material context. Use spaced repetition, interleaving, and active recall. Provide:\n- High-level summary\n- Weekly breakdown with topics and hours\n- Daily or session-level suggestions\n- Checkpoints and self-assessment ideas\n- Tips to stay consistent. Keep output concise and skimmable.`
+
+        const focusList: string[] = Array.isArray(selectedTopicNames) && selectedTopicNames.length
+            ? selectedTopicNames
+            : Array.isArray(topics)
+                ? topics
+                : typeof topics === "string" && topics.trim().length
+                    ? topics.split(/,|\n/).map((s) => s.trim()).filter(Boolean)
+                    : []
+
+        const materialLine = resourceName ? `Study material: ${resourceName}` : "Study material: (not specified)"
+        const focusLine = focusList.length ? `Focus topics: ${focusList.join(", ")}` : "Focus topics: (not specified)"
 
         const { text } = await generateText({
             model: groq("llama-3.3-70b-versatile"),
-            prompt: `${system}\n\nINPUT:\nGoals: ${goals}\nTimeframe (weeks): ${timeframeWeeks}\nHours/week: ${weeklyHours}\nFocus topics: ${Array.isArray(topics) ? topics.join(", ") : topics ?? "(not specified)"}`,
+            prompt: `${system}\n\nINPUT:\nGoals: ${goals}\nTimeframe (weeks): ${timeframeWeeks}\nHours/week: ${weeklyHours}\n${materialLine}\n${focusLine}`,
         })
 
         return NextResponse.json({ success: true, plan: text })

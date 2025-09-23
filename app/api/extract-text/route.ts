@@ -1,4 +1,25 @@
 import { type NextRequest, NextResponse } from "next/server"
+import path from "path"
+import { promises as fs } from "fs"
+import { mkdir } from "fs/promises"
+import { existsSync } from "fs"
+
+async function readDb() {
+  const dbPath = path.join(process.cwd(), "data", "db.json")
+  try {
+    const raw = await fs.readFile(dbPath, "utf8")
+    return JSON.parse(raw || "{}")
+  } catch {
+    return {}
+  }
+}
+
+async function writeDb(data: any) {
+  const dir = path.join(process.cwd(), "data")
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true })
+  const dbPath = path.join(dir, "db.json")
+  await fs.writeFile(dbPath, JSON.stringify(data, null, 2), "utf8")
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,8 +55,18 @@ export async function POST(request: NextRequest) {
     - Neural Networks
     `
 
-    // Save to mock database (in real implementation, you'd save to actual database)
-    const resourceId = Math.floor(Math.random() * 1000) + 1
+    // Link to resource in JSON DB (find by filename from upload step)
+    const db = await readDb()
+    let resources: any[] = Array.isArray(db.resources) ? db.resources : []
+    let resource = resources.find((r) => r.name === filename)
+    if (!resource) {
+      const nextId = (resources.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) || 0) + 1
+      const upload_date = new Date().toISOString().slice(0, 10)
+      resource = { id: nextId, name: filename, upload_date, topics_count: 0 }
+      db.resources = [resource, ...resources]
+      await writeDb(db)
+    }
+    const resourceId = resource.id
 
     return NextResponse.json({
       success: true,

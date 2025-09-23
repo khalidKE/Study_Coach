@@ -1,0 +1,42 @@
+{
+  "chats": [
+    {
+      "session_id": "0xgd7fj3lw9mfwfcgd7",
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "Hi! I'm StudyCoach AI. You can chat with me, optionally upload a PDF, and I can generate a short quiz for you. I'll first show questions without answers; after you respond, I'll give you a detailed report."
+        }
+      ],
+      "updated_at": "2025-09-23T10:43:37.128Z"
+    }
+  ],
+  "resources": [
+    {
+      "id": 1,
+      "name": "285_OOPS lecture notes Complete (1).pdf",
+      "upload_date": "2025-09-23",
+      "topics_count": 3
+    }
+  ],
+  "topics": [
+    {
+      "id": 1,
+      "name": "Introduction to Machine Learning",
+      "content": "Machine learning is a subset of artificial intelligence...",
+      "resource_id": 1
+    },
+    {
+      "id": 2,
+      "name": "Supervised Learning",
+      "content": "Supervised learning is a type of machine learning...",
+      "resource_id": 1
+    },
+    {
+      "id": 3,
+      "name": "Unsupervised Learning",
+      "content": "Unsupervised learning finds hidden patterns...",
+      "resource_id": 1
+    }
+  ]
+}

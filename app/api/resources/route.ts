@@ -1,27 +1,20 @@
 import { NextResponse } from "next/server"
+import { promises as fs } from "fs"
+import path from "path"
 
 export async function GET() {
   try {
-    // Mock resources data (in real implementation, fetch from database)
-    const mockResources = [
-      {
-        id: 1,
-        name: "machine-learning-textbook.pdf",
-        upload_date: "2024-01-15",
-        topics_count: 3,
-      },
-      {
-        id: 2,
-        name: "data-structures-guide.pdf",
-        upload_date: "2024-01-14",
-        topics_count: 5,
-      },
-    ]
+    const dbPath = path.join(process.cwd(), "data", "db.json")
+    let resources: any[] = []
+    try {
+      const raw = await fs.readFile(dbPath, "utf8")
+      const json = JSON.parse(raw || "{}")
+      resources = Array.isArray(json.resources) ? json.resources : []
+    } catch {
+      // no db yet -> empty
+    }
 
-    return NextResponse.json({
-      success: true,
-      resources: mockResources,
-    })
+    return NextResponse.json({ success: true, resources })
   } catch (error) {
     console.error("Resources fetch error:", error)
     return NextResponse.json({ error: "Failed to fetch resources" }, { status: 500 })
